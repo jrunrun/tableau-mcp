@@ -1,13 +1,14 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { Err, Ok } from 'ts-results-es';
+import { Ok } from 'ts-results-es';
 
-import { PulseDisabledError } from '../../../sdks/tableau/methods/pulseMethods.js';
+import { PulseDisabledError, PulseNotAvailableError } from '../../../errors/mcpToolError.js';
 import { PulseInsightBundleType } from '../../../sdks/tableau/types/pulse.js';
 import { Server } from '../../../server.js';
 import { stubDefaultEnvVars } from '../../../testShared.js';
 import invariant from '../../../utils/invariant.js';
 import { Provider } from '../../../utils/provider.js';
 import { exportedForTesting as resourceAccessCheckerExportedForTesting } from '../../resourceAccessChecker.js';
+import { getMockRequestHandlerExtra } from '../../toolContext.mock.js';
 import { getGeneratePulseMetricValueInsightBundleTool } from './generatePulseMetricValueInsightBundleTool.js';
 
 const { resetResourceAccessCheckerSingleton } = resourceAccessCheckerExportedForTesting;
@@ -198,7 +199,7 @@ describe('getGeneratePulseMetricValueInsightBundleTool', () => {
 
   it('should return an error when executing the tool against Tableau Server', async () => {
     mocks.mockGeneratePulseMetricValueInsightBundle.mockResolvedValue(
-      new Err(new PulseDisabledError('tableau-server', 404)),
+      new PulseNotAvailableError().toErr(),
     );
     const result = await getToolResult();
     expect(result.isError).toBe(true);
@@ -208,7 +209,7 @@ describe('getGeneratePulseMetricValueInsightBundleTool', () => {
 
   it('should return an error when Pulse is disabled', async () => {
     mocks.mockGeneratePulseMetricValueInsightBundle.mockResolvedValue(
-      new Err(new PulseDisabledError('pulse-disabled', 400)),
+      new PulseDisabledError().toErr(),
     );
     const result = await getToolResult();
     expect(result.isError).toBe(true);
@@ -223,11 +224,7 @@ describe('getGeneratePulseMetricValueInsightBundleTool', () => {
     expect(result.isError).toBe(true);
     invariant(result.content[0].type === 'text');
     expect(result.content[0].text).toBe(
-      [
-        'The set of allowed metric insights that can be queried is limited by the server configuration.',
-        'Generating the Pulse Metric Value Insight Bundle is not allowed because the definition is derived from the',
-        'data source with LUID A6FC3C9F-4F40-4906-8DB0-AC70C5FB5A11, which is not in the allowed set of data sources.',
-      ].join(' '),
+      'The set of allowed metric insights that can be queried is limited by the server configuration. One or more messages in the request contain only metrics derived from data sources that are not in the allowed set.',
     );
 
     expect(mocks.mockGeneratePulseMetricValueInsightBundle).not.toHaveBeenCalled();
@@ -236,14 +233,6 @@ describe('getGeneratePulseMetricValueInsightBundleTool', () => {
   async function getToolResult(bundleType?: PulseInsightBundleType): Promise<CallToolResult> {
     const tool = getGeneratePulseMetricValueInsightBundleTool(new Server());
     const callback = await Provider.from(tool.callback);
-    return await callback(
-      { bundleRequest, bundleType },
-      {
-        signal: new AbortController().signal,
-        requestId: 'test-request-id',
-        sendNotification: vi.fn(),
-        sendRequest: vi.fn(),
-      },
-    );
+    return await callback({ bundleRequest, bundleType }, getMockRequestHandlerExtra());
   }
 });

@@ -1,12 +1,13 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { Err, Ok } from 'ts-results-es';
+import { Ok } from 'ts-results-es';
 
 import { getConfig } from '../../../config.js';
-import { PulseDisabledError } from '../../../sdks/tableau/methods/pulseMethods.js';
+import { PulseDisabledError, PulseNotAvailableError } from '../../../errors/mcpToolError.js';
 import type { PulseMetricSubscription } from '../../../sdks/tableau/types/pulse.js';
 import { Server } from '../../../server.js';
 import invariant from '../../../utils/invariant.js';
 import { Provider } from '../../../utils/provider.js';
+import { getMockRequestHandlerExtra } from '../../toolContext.mock.js';
 import { mockPulseMetricDefinitions } from '../mockPulseMetricDefinitions.js';
 import {
   constrainPulseMetricSubscriptions,
@@ -75,7 +76,7 @@ describe('listPulseMetricSubscriptionsTool', () => {
 
   it('should return an error when executing the tool against Tableau Server', async () => {
     mocks.mockListPulseMetricSubscriptionsForCurrentUser.mockResolvedValue(
-      new Err(new PulseDisabledError('tableau-server', 404)),
+      new PulseNotAvailableError().toErr(),
     );
     const result = await getToolResult();
     expect(result.isError).toBe(true);
@@ -85,7 +86,7 @@ describe('listPulseMetricSubscriptionsTool', () => {
 
   it('should return an error when Pulse is disabled', async () => {
     mocks.mockListPulseMetricSubscriptionsForCurrentUser.mockResolvedValue(
-      new Err(new PulseDisabledError('pulse-disabled', 400)),
+      new PulseDisabledError().toErr(),
     );
     const result = await getToolResult();
     expect(result.isError).toBe(true);
@@ -98,6 +99,7 @@ describe('listPulseMetricSubscriptionsTool', () => {
       config: getConfig(),
       requestId: 'request-id',
       server: getServer(),
+      tableauAuthInfo: undefined,
       signal: new AbortController().signal,
     };
 
@@ -179,15 +181,7 @@ describe('listPulseMetricSubscriptionsTool', () => {
 async function getToolResult(): Promise<CallToolResult> {
   const listPulseMetricSubscriptionsTool = getListPulseMetricSubscriptionsTool(new Server());
   const callback = await Provider.from(listPulseMetricSubscriptionsTool.callback);
-  return await callback(
-    {},
-    {
-      signal: new AbortController().signal,
-      requestId: 'test-request-id',
-      sendNotification: vi.fn(),
-      sendRequest: vi.fn(),
-    },
-  );
+  return await callback({}, getMockRequestHandlerExtra());
 }
 
 function getServer(): InstanceType<typeof Server> {

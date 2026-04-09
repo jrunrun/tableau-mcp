@@ -1,17 +1,11 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 
-import { getConfig } from '../../../config.js';
 import { useRestApi } from '../../../restApiInstance.js';
-import { PulseDisabledError } from '../../../sdks/tableau/methods/pulseMethods.js';
 import { PulseMetric } from '../../../sdks/tableau/types/pulse.js';
 import { Server } from '../../../server.js';
-import { getTableauAuthInfo } from '../../../server/oauth/getTableauAuthInfo.js';
-import { createProductTelemetryBase } from '../../../telemetry/productTelemetry/telemetryForwarder.js';
-import { getConfigWithOverrides } from '../../../utils/mcpSiteSettings.js';
 import { Tool } from '../../tool.js';
 import { constrainPulseMetrics } from '../constrainPulseMetrics.js';
-import { getPulseDisabledError } from '../getPulseDisabledError.js';
 
 const paramsSchema = {
   pulseMetricDefinitionID: z.string().length(36),
@@ -38,31 +32,14 @@ Retrieves a list of published Pulse Metrics from a Pulse Metric Definition using
       readOnlyHint: true,
       openWorldHint: false,
     },
-    callback: async (
-      { pulseMetricDefinitionID },
-      { requestId, sessionId, authInfo, signal },
-    ): Promise<CallToolResult> => {
-      const config = getConfig();
-      const restApiArgs = {
-        config,
-        requestId,
-        server,
-        signal,
-        authInfo: getTableauAuthInfo(authInfo),
-      };
-
-      return await listPulseMetricsFromMetricDefinitionIdTool.logAndExecute<
-        Array<PulseMetric>,
-        PulseDisabledError
-      >({
-        requestId,
-        sessionId,
-        authInfo,
+    callback: async ({ pulseMetricDefinitionID }, extra): Promise<CallToolResult> => {
+      return await listPulseMetricsFromMetricDefinitionIdTool.logAndExecute<Array<PulseMetric>>({
+        extra,
         args: { pulseMetricDefinitionID },
         callback: async () => {
           return await useRestApi({
-            ...restApiArgs,
-            jwtScopes: ['tableau:insight_definitions_metrics:read'],
+            ...extra,
+            jwtScopes: listPulseMetricsFromMetricDefinitionIdTool.requiredApiScopes,
             callback: async (restApi) => {
               return await restApi.pulseMethods.listPulseMetricsFromMetricDefinitionId(
                 pulseMetricDefinitionID,
@@ -71,17 +48,13 @@ Retrieves a list of published Pulse Metrics from a Pulse Metric Definition using
           });
         },
         constrainSuccessResult: async (metrics) => {
-          const configWithOverrides = await getConfigWithOverrides({
-            restApiArgs,
-          });
+          const configWithOverrides = await extra.getConfigWithOverrides();
 
           return constrainPulseMetrics({
             metrics,
             boundedContext: configWithOverrides.boundedContext,
           });
         },
-        getErrorText: getPulseDisabledError,
-        productTelemetryBase: createProductTelemetryBase(config, authInfo),
       });
     },
   });

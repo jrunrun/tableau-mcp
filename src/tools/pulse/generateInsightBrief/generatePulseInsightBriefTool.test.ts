@@ -1,12 +1,13 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { Err, Ok } from 'ts-results-es';
+import { Ok } from 'ts-results-es';
 
-import { PulseDisabledError } from '../../../sdks/tableau/methods/pulseMethods.js';
+import { PulseDisabledError, PulseNotAvailableError } from '../../../errors/mcpToolError.js';
 import { Server } from '../../../server.js';
 import { stubDefaultEnvVars } from '../../../testShared.js';
 import invariant from '../../../utils/invariant.js';
 import { Provider } from '../../../utils/provider.js';
 import { exportedForTesting as resourceAccessCheckerExportedForTesting } from '../../resourceAccessChecker.js';
+import { getMockRequestHandlerExtra } from '../../toolContext.mock.js';
 import { getGeneratePulseInsightBriefTool } from './generatePulseInsightBriefTool.js';
 
 const { resetResourceAccessCheckerSingleton } = resourceAccessCheckerExportedForTesting;
@@ -173,9 +174,7 @@ describe('getGeneratePulseInsightBriefTool', () => {
   });
 
   it('should return an error when executing the tool against Tableau Server', async () => {
-    mocks.mockGeneratePulseInsightBrief.mockResolvedValue(
-      new Err(new PulseDisabledError('tableau-server', 404)),
-    );
+    mocks.mockGeneratePulseInsightBrief.mockResolvedValue(new PulseNotAvailableError().toErr());
     const result = await getToolResult();
     expect(result.isError).toBe(true);
     invariant(result.content[0].type === 'text');
@@ -183,9 +182,7 @@ describe('getGeneratePulseInsightBriefTool', () => {
   });
 
   it('should return an error when Pulse is disabled', async () => {
-    mocks.mockGeneratePulseInsightBrief.mockResolvedValue(
-      new Err(new PulseDisabledError('pulse-disabled', 400)),
-    );
+    mocks.mockGeneratePulseInsightBrief.mockResolvedValue(new PulseDisabledError().toErr());
     const result = await getToolResult();
     expect(result.isError).toBe(true);
     invariant(result.content[0].type === 'text');
@@ -335,12 +332,7 @@ describe('getGeneratePulseInsightBriefTool', () => {
     const callback = await Provider.from(tool.callback);
     return await callback(
       { briefRequest: overrideBriefRequest ?? briefRequest },
-      {
-        signal: new AbortController().signal,
-        requestId: 'test-request-id',
-        sendNotification: vi.fn(),
-        sendRequest: vi.fn(),
-      },
+      getMockRequestHandlerExtra(),
     );
   }
 });

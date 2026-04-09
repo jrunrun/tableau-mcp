@@ -1,23 +1,20 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
-import { getConfig } from '../../../config.js';
 import { BoundedContext } from '../../../overridableConfig.js';
 import { RestApiArgs, useRestApi } from '../../../restApiInstance.js';
 import { PulseMetricSubscription } from '../../../sdks/tableau/types/pulse.js';
 import { Server } from '../../../server.js';
-import { getTableauAuthInfo } from '../../../server/oauth/getTableauAuthInfo.js';
-import { createProductTelemetryBase } from '../../../telemetry/productTelemetry/telemetryForwarder.js';
+import { getRequiredApiScopesForTool } from '../../../server/oauth/scopes.js';
 import { getExceptionMessage } from '../../../utils/getExceptionMessage.js';
-import { getConfigWithOverrides } from '../../../utils/mcpSiteSettings.js';
 import { ConstrainedResult, Tool } from '../../tool.js';
-import { getPulseDisabledError } from '../getPulseDisabledError.js';
 
+const toolName = 'list-pulse-metric-subscriptions';
 const paramsSchema = {};
 
 export const getListPulseMetricSubscriptionsTool = (server: Server): Tool<typeof paramsSchema> => {
   const listPulseMetricSubscriptionsTool = new Tool({
     server,
-    name: 'list-pulse-metric-subscriptions',
+    name: toolName,
     description: `
 Retrieves a list of published Pulse Metric Subscriptions for the current user using the Tableau REST API.  Use this tool when a user requests to list Tableau Pulse Metric Subscriptions for the current user.
 
@@ -36,43 +33,28 @@ Retrieves a list of published Pulse Metric Subscriptions for the current user us
       readOnlyHint: true,
       openWorldHint: false,
     },
-    callback: async (_, { requestId, sessionId, authInfo, signal }): Promise<CallToolResult> => {
-      const config = getConfig();
-      const restApiArgs = {
-        config,
-        requestId,
-        server,
-        signal,
-        authInfo: getTableauAuthInfo(authInfo),
-      };
-
+    callback: async (_, extra): Promise<CallToolResult> => {
       return await listPulseMetricSubscriptionsTool.logAndExecute({
-        requestId,
-        sessionId,
-        authInfo,
+        extra,
         args: {},
         callback: async () => {
           return await useRestApi({
-            ...restApiArgs,
-            jwtScopes: ['tableau:metric_subscriptions:read'],
+            ...extra,
+            jwtScopes: listPulseMetricSubscriptionsTool.requiredApiScopes,
             callback: async (restApi) => {
               return await restApi.pulseMethods.listPulseMetricSubscriptionsForCurrentUser();
             },
           });
         },
         constrainSuccessResult: async (subscriptions) => {
-          const configWithOverrides = await getConfigWithOverrides({
-            restApiArgs,
-          });
+          const configWithOverrides = await extra.getConfigWithOverrides();
 
           return await constrainPulseMetricSubscriptions({
             subscriptions,
             boundedContext: configWithOverrides.boundedContext,
-            restApiArgs,
+            restApiArgs: extra,
           });
         },
-        getErrorText: getPulseDisabledError,
-        productTelemetryBase: createProductTelemetryBase(config, authInfo),
       });
     },
   });
@@ -110,7 +92,7 @@ export async function constrainPulseMetricSubscriptions({
   try {
     const metricsResult = await useRestApi({
       ...restApiArgs,
-      jwtScopes: ['tableau:insight_metrics:read'],
+      jwtScopes: getRequiredApiScopesForTool(toolName),
       callback: async (restApi) => {
         return await restApi.pulseMethods.listPulseMetricsFromMetricIds(
           subscriptions.map((subscription) => subscription.metric_id),

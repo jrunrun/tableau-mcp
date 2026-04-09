@@ -1,10 +1,19 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { InitializeRequest, SetLevelRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { McpServer, ToolCallback } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
+import {
+  InitializeRequest,
+  ServerNotification,
+  ServerRequest,
+  SetLevelRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 
 import pkg from '../package.json';
-import { setLogLevel } from './logging/log.js';
+import { getConfig } from './config.js';
+import { getTableauServerInfo } from './getTableauServerInfo';
+import { setNotificationLevel } from './logging/notification.js';
 import { TableauAuthInfo } from './server/oauth/schemas.js';
 import { Tool } from './tools/tool.js';
+import { TableauRequestHandlerExtra } from './tools/toolContext.js';
 import { toolNames } from './tools/toolName.js';
 import { toolFactories } from './tools/tools.js';
 import { getConfigWithOverrides } from './utils/mcpSiteSettings';
@@ -53,14 +62,47 @@ export class Server extends McpServer {
     this._clientInfo = clientInfo;
   }
 
-  registerTools = async (authInfo?: TableauAuthInfo): Promise<void> => {
+  registerTools = async (tableauAuthInfo?: TableauAuthInfo): Promise<void> => {
+    const config = getConfig();
+
     for (const {
       name,
       description,
       paramsSchema,
       annotations,
       callback,
-    } of await this._getToolsToRegister(authInfo)) {
+    } of await this._getToolsToRegister(tableauAuthInfo)) {
+      const toolCallback: ToolCallback<typeof paramsSchema> = async (
+        args: typeof paramsSchema,
+        extra: RequestHandlerExtra<ServerRequest, ServerNotification>,
+      ) => {
+        const tableauToolCallback = await Provider.from(callback);
+        const tableauRequestHandlerExtra: TableauRequestHandlerExtra = {
+          ...extra,
+          config,
+          server: this,
+          tableauAuthInfo,
+          _userLuid: tableauAuthInfo?.userId,
+          _siteLuid: tableauAuthInfo?.siteId,
+          getUserLuid() {
+            return tableauRequestHandlerExtra._userLuid ?? '';
+          },
+          setUserLuid(userLuid: string) {
+            tableauRequestHandlerExtra._userLuid = userLuid;
+          },
+          getSiteLuid() {
+            return tableauRequestHandlerExtra._siteLuid ?? '';
+          },
+          setSiteLuid(siteLuid: string) {
+            tableauRequestHandlerExtra._siteLuid = siteLuid;
+          },
+          getConfigWithOverrides: async () =>
+            getConfigWithOverrides({ restApiArgs: tableauRequestHandlerExtra }),
+        };
+
+        return tableauToolCallback(args, tableauRequestHandlerExtra);
+      };
+
       this.registerTool(
         name,
         {
@@ -68,41 +110,44 @@ export class Server extends McpServer {
           inputSchema: await Provider.from(paramsSchema),
           annotations: await Provider.from(annotations),
         },
-        await Provider.from(callback),
+        toolCallback,
       );
     }
   };
 
   registerRequestHandlers = (): void => {
     this.server.setRequestHandler(SetLevelRequestSchema, async (request) => {
-      setLogLevel(this, request.params.level);
+      setNotificationLevel(this, request.params.level);
       return {};
     });
   };
 
-  private _getToolsToRegister = async (authInfo?: TableauAuthInfo): Promise<Array<Tool<any>>> => {
-    const config = await getConfigWithOverrides({
+  private _getToolsToRegister = async (
+    tableauAuthInfo?: TableauAuthInfo,
+  ): Promise<Array<Tool<any>>> => {
+    const config = getConfig();
+    const configOverrides = await getConfigWithOverrides({
       restApiArgs: {
         server: this,
-        authInfo,
+        tableauAuthInfo,
         disableLogging: true, // MCP server is not connected yet so we can't send logging notifications
       },
     });
 
-    const { includeTools, excludeTools } = config;
+    const tableauServerInfo = await getTableauServerInfo(config.server || tableauAuthInfo?.server);
 
-    const tools = toolFactories.map((toolFactory) => toolFactory(this, authInfo));
-    const toolsToRegister = tools.filter((tool) => {
-      if (includeTools.length > 0) {
-        return includeTools.includes(tool.name);
-      }
+    const { includeTools, excludeTools } = configOverrides;
 
-      if (excludeTools.length > 0) {
-        return !excludeTools.includes(tool.name);
-      }
-
-      return true;
-    });
+    const allTools = toolFactories.map((toolFactory) =>
+      toolFactory(this, tableauServerInfo.productVersion),
+    );
+    const toolsToRegister: typeof allTools = [];
+    for (const tool of allTools) {
+      if (await Provider.from(tool.disabled)) continue;
+      if (includeTools.length > 0 && !includeTools.includes(tool.name)) continue;
+      if (excludeTools.length > 0 && excludeTools.includes(tool.name)) continue;
+      toolsToRegister.push(tool);
+    }
 
     if (toolsToRegister.length === 0) {
       throw new Error(`

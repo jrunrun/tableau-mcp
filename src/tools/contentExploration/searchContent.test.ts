@@ -3,6 +3,7 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { Server } from '../../server.js';
 import invariant from '../../utils/invariant.js';
 import { Provider } from '../../utils/provider.js';
+import { getMockRequestHandlerExtra } from '../toolContext.mock.js';
 import { getSearchContentTool } from './searchContent.js';
 
 export const mockSearchContentResponse = {
@@ -165,7 +166,7 @@ describe('searchContentTool', () => {
       terms: 'dashboard',
       page: 0,
       limit: 100,
-      orderBy: 'hitsTotal:desc',
+      order_by: 'hitsTotal:desc',
       filter: undefined,
     });
   });
@@ -185,7 +186,7 @@ describe('searchContentTool', () => {
       terms: 'dashboard',
       page: 0,
       limit: 100,
-      orderBy: 'hitsTotal:desc,hitsSmallSpanTotal:asc',
+      order_by: 'hitsTotal:desc,hitsSmallSpanTotal:asc',
       filter: undefined,
     });
   });
@@ -201,7 +202,7 @@ describe('searchContentTool', () => {
       terms: undefined,
       page: 0,
       limit: 100,
-      orderBy: undefined,
+      order_by: undefined,
       filter: 'type:in:[workbook,datasource]',
     });
   });
@@ -294,7 +295,7 @@ describe('searchContentTool', () => {
       terms: undefined,
       page: 0,
       limit: 100,
-      orderBy: 'downstreamWorkbookCount:desc',
+      order_by: 'downstreamWorkbookCount:desc',
       filter: 'type:eq:table',
     });
   });
@@ -311,7 +312,7 @@ describe('searchContentTool', () => {
       terms: undefined,
       page: 0,
       limit: 100,
-      orderBy: 'downstreamWorkbookCount:desc',
+      order_by: 'downstreamWorkbookCount:desc',
       filter: 'type:eq:database',
     });
   });
@@ -347,10 +348,5 @@ describe('searchContentTool', () => {
 async function getToolResult(params: any): Promise<CallToolResult> {
   const searchContentTool = getSearchContentTool(new Server());
   const callback = await Provider.from(searchContentTool.callback);
-  return await callback(params, {
-    signal: new AbortController().signal,
-    requestId: 'test-request-id',
-    sendNotification: vi.fn(),
-    sendRequest: vi.fn(),
-  });
+  return await callback(params, getMockRequestHandlerExtra());
 }

@@ -1,22 +1,15 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { Err, Ok } from 'ts-results-es';
+import { Ok } from 'ts-results-es';
 import { z } from 'zod';
 
-import { getConfig } from '../../config.js';
+import { ViewNotAllowedError } from '../../errors/mcpToolError.js';
 import { useRestApi } from '../../restApiInstance.js';
 import { Server } from '../../server.js';
-import { getTableauAuthInfo } from '../../server/oauth/getTableauAuthInfo.js';
-import { createProductTelemetryBase } from '../../telemetry/productTelemetry/telemetryForwarder.js';
 import { resourceAccessChecker } from '../resourceAccessChecker.js';
 import { Tool } from '../tool.js';
 
 const paramsSchema = {
   viewId: z.string(),
-};
-
-export type GetViewDataError = {
-  type: 'view-not-allowed';
-  message: string;
 };
 
 export const getGetViewDataTool = (server: Server): Tool<typeof paramsSchema> => {
@@ -31,41 +24,24 @@ export const getGetViewDataTool = (server: Server): Tool<typeof paramsSchema> =>
       readOnlyHint: true,
       openWorldHint: false,
     },
-    callback: async (
-      { viewId },
-      { requestId, sessionId, authInfo, signal },
-    ): Promise<CallToolResult> => {
-      const config = getConfig();
-      const restApiArgs = {
-        config,
-        requestId,
-        server,
-        signal,
-        authInfo: getTableauAuthInfo(authInfo),
-      };
-
-      return await getViewDataTool.logAndExecute<string, GetViewDataError>({
-        requestId,
-        sessionId,
-        authInfo,
+    callback: async ({ viewId }, extra): Promise<CallToolResult> => {
+      return await getViewDataTool.logAndExecute<string>({
+        extra,
         args: { viewId },
         callback: async () => {
           const isViewAllowedResult = await resourceAccessChecker.isViewAllowed({
             viewId,
-            restApiArgs,
+            extra,
           });
 
           if (!isViewAllowedResult.allowed) {
-            return new Err({
-              type: 'view-not-allowed',
-              message: isViewAllowedResult.message,
-            });
+            return new ViewNotAllowedError(isViewAllowedResult.message).toErr();
           }
 
           return new Ok(
             await useRestApi({
-              ...restApiArgs,
-              jwtScopes: ['tableau:views:download'],
+              ...extra,
+              jwtScopes: getViewDataTool.requiredApiScopes,
               callback: async (restApi) => {
                 return await restApi.viewsMethods.queryViewData({
                   viewId,
@@ -81,13 +57,6 @@ export const getGetViewDataTool = (server: Server): Tool<typeof paramsSchema> =>
             result: viewData,
           };
         },
-        getErrorText: (error: GetViewDataError) => {
-          switch (error.type) {
-            case 'view-not-allowed':
-              return error.message;
-          }
-        },
-        productTelemetryBase: createProductTelemetryBase(config, authInfo),
       });
     },
   });
