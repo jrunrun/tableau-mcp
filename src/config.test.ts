@@ -220,16 +220,16 @@ describe('Config', () => {
     expect(config.mcpSiteSettingsCheckIntervalInMinutes).toBe(2);
   });
 
-  it('should set enableMcpSiteSettings to false by default', () => {
-    const config = new Config();
-    expect(config.enableMcpSiteSettings).toBe(false);
-  });
-
-  it('should set enableMcpSiteSettings to true when specified', () => {
-    vi.stubEnv('ENABLE_MCP_SITE_SETTINGS', 'true');
-
+  it('should set enableMcpSiteSettings to true by default', () => {
     const config = new Config();
     expect(config.enableMcpSiteSettings).toBe(true);
+  });
+
+  it('should set enableMcpSiteSettings to false when specified', () => {
+    vi.stubEnv('ENABLE_MCP_SITE_SETTINGS', 'false');
+
+    const config = new Config();
+    expect(config.enableMcpSiteSettings).toBe(false);
   });
 
   it('should set enablePassthroughAuth to false by default', () => {
@@ -242,6 +242,18 @@ describe('Config', () => {
 
     const config = new Config();
     expect(config.enablePassthroughAuth).toBe(true);
+  });
+
+  it('should set breakGlassDisableGlobally to false by default', () => {
+    const config = new Config();
+    expect(config.breakGlassDisableGlobally).toBe(false);
+  });
+
+  it('should set breakGlassDisableGlobally to true when specified', () => {
+    vi.stubEnv('BREAK_GLASS_DISABLE_GLOBALLY', 'true');
+
+    const config = new Config();
+    expect(config.breakGlassDisableGlobally).toBe(true);
   });
 
   describe('HTTP server config parsing', () => {

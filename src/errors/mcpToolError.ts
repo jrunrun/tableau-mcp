@@ -96,9 +96,21 @@ export class ViewNotAllowedError extends McpToolError {
   }
 }
 
+export class CustomViewNotAllowedError extends McpToolError {
+  constructor(message: string) {
+    super({ type: 'custom-view-not-allowed', message, statusCode: 403 });
+  }
+}
+
 export class WorkbookNotAllowedError extends McpToolError {
   constructor(message: string) {
     super({ type: 'workbook-not-allowed', message, statusCode: 403 });
+  }
+}
+
+export class WorkbookNotFoundError extends McpToolError {
+  constructor(message: string) {
+    super({ type: 'workbook-not-found', message, statusCode: 404 });
   }
 }
 
@@ -111,6 +123,12 @@ export class ZodiosValidationError extends McpToolError {
       internalError: error.data?.toString(),
       internalErrorDetails: fromError(error.cause).toString(),
     });
+  }
+}
+
+export class ServiceUnavailableError extends McpToolError {
+  constructor(message: string) {
+    super({ type: 'service-unavailable', message, statusCode: 503 });
   }
 }
 

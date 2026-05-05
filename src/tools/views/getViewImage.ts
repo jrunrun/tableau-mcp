@@ -3,7 +3,6 @@ import { Ok } from 'ts-results-es';
 import { z } from 'zod';
 
 import {
-  ArgsValidationError,
   FeatureDisabledError,
   UnknownError,
   ViewNotAllowedError,
@@ -11,24 +10,26 @@ import {
 import { useRestApi } from '../../restApiInstance.js';
 import { ProductVersion } from '../../sdks/tableau/types/serverInfo.js';
 import { Server } from '../../server.js';
-import { getResultForTableauVersion } from '../../utils/isTableauVersionAtLeast.js';
 import { convertViewImageToToolResult } from '../convertViewImageToToolResult.js';
 import { resourceAccessChecker } from '../resourceAccessChecker.js';
 import { Tool } from '../tool.js';
+import { getImageFormatForVersion } from './getImageFormatForVersion.js';
 
 const paramsSchema = {
   viewId: z.string(),
-  width: z.number().gt(0).optional(),
-  height: z.number().gt(0).optional(),
+  width: z.number().gt(0).int().optional(),
+  height: z.number().gt(0).int().optional(),
   format: z
     .enum(['PNG', 'SVG'])
     .optional()
     .describe(
       'The image format to return. Use "PNG" (default) when the image will be analyzed or interpreted. Use "SVG" when the image will be displayed to the user — SVG is scalable and produces smaller file sizes.',
     ),
+  viewFilters: z
+    .record(z.string())
+    .optional()
+    .describe('Optional map of view filter field names to values.'),
 };
-
-const MIN_VERSION_FOR_SVG = '2026.2.0';
 
 export const getGetViewImageTool = (
   server: Server,
@@ -37,37 +38,30 @@ export const getGetViewImageTool = (
   const getViewImageTool = new Tool({
     server,
     name: 'get-view-image',
-    description:
-      'Retrieves an image of the specified view in a Tableau workbook. The width and height in pixels can be provided. The default width and height are both 800 pixels.',
+    description: [
+      'Retrieves an image of the specified view in a Tableau workbook.',
+      'Optional width and height in pixels control render size.',
+      'Optional view field names and values can be provided to filter the view.',
+      'For custom views, use the tool to get view custom view image by custom view id instead.',
+    ].join(' '),
     paramsSchema,
     annotations: {
       title: 'Get View Image',
       readOnlyHint: true,
       openWorldHint: false,
     },
-    callback: async ({ viewId, width, height, format }, extra): Promise<CallToolResult> => {
+    callback: async (
+      { viewId, width, height, format, viewFilters },
+      extra,
+    ): Promise<CallToolResult> => {
       return await getViewImageTool.logAndExecute<string>({
         extra,
-        args: { viewId },
+        args: { viewId, width, height, format, viewFilters },
         callback: async () => {
-          // Version check for format parameter
-          const supportsFormat = getResultForTableauVersion({
-            productVersion: tableauServerVersion,
-            mappings: {
-              [MIN_VERSION_FOR_SVG]: true,
-              default: false,
-            },
-          });
-
-          // If SVG is requested but version is too old, return an error
-          if (format === 'SVG' && !supportsFormat) {
-            return new ArgsValidationError(
-              `SVG format requires Tableau Server ${MIN_VERSION_FOR_SVG} or later. Current version: ${tableauServerVersion.value}`,
-            ).toErr();
+          const formatResult = getImageFormatForVersion(format, tableauServerVersion);
+          if (formatResult.isErr()) {
+            return formatResult;
           }
-
-          // If PNG is requested but version is too old, omit format parameter (PNG is default)
-          const formatToUse = format === 'PNG' && !supportsFormat ? undefined : format;
 
           const isViewAllowedResult = await resourceAccessChecker.isViewAllowed({
             viewId,
@@ -88,7 +82,8 @@ export const getGetViewImageTool = (
                 width,
                 height,
                 resolution: 'high',
-                format: formatToUse,
+                format: formatResult.value,
+                viewFilters,
               });
 
               if (result.isErr()) {
