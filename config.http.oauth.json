@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "tableau-heroku": {
+      "type": "streamable-http",
+      "url": "https://YOUR-APP-NAME.herokuapp.com/tableau-mcp",
+      "oauth": {
+        "type": "client_credentials",
+        "clientId": "YOUR_CLIENT_ID",
+        "clientSecret": "YOUR_CLIENT_SECRET"
+      }
+    }
+  }
+}
