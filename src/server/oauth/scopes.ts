@@ -6,7 +6,7 @@
  */
 
 import { getConfig } from '../../config.js';
-import type { ToolName } from '../../tools/toolName.js';
+import type { WebToolName } from '../../tools/web/toolName.js';
 
 /**
  * MCP Scopes supported by the Tableau MCP server
@@ -21,7 +21,8 @@ export type McpScope =
   | 'tableau:mcp:view:read'
   | 'tableau:mcp:view:download'
   | 'tableau:mcp:pulse:read'
-  | 'tableau:mcp:insight:create';
+  | 'tableau:mcp:insight:create'
+  | 'tableau:mcp:tasks:read';
 
 export type TableauApiScope =
   | 'tableau:content:read'
@@ -32,7 +33,9 @@ export type TableauApiScope =
   | 'tableau:metric_subscriptions:read'
   | 'tableau:insights:read'
   | 'tableau:insight_brief:create'
-  | 'tableau:mcp_site_settings:read';
+  | 'tableau:mcp_site_settings:read'
+  | 'tableau:tasks:read'
+  | 'tableau:users:read';
 
 /**
  * Default scopes supported by the MCP server
@@ -47,6 +50,7 @@ export const DEFAULT_SCOPES_SUPPORTED: ReadonlyArray<McpScope> = [
   'tableau:mcp:view:download',
   'tableau:mcp:pulse:read',
   'tableau:mcp:insight:create',
+  'tableau:mcp:tasks:read',
 ];
 
 export const RESOURCE_ACCESS_CHECKER_REQUIRED_API_SCOPES: ReadonlyArray<TableauApiScope> = [
@@ -58,19 +62,27 @@ export const RESOURCE_ACCESS_CHECKER_REQUIRED_API_SCOPES: ReadonlyArray<TableauA
  * Validates that a scope string is a valid MCP scope
  */
 export function isValidScope(scope: string): scope is McpScope {
-  return supportedMcpScopes.some((supported) => supported === scope);
+  return getSupportedMcpScopes().some((supported) => supported === scope);
 }
 
 const toolScopeMap: Record<
-  ToolName,
+  WebToolName,
   { mcp: ReadonlyArray<McpScope>; api: ReadonlySet<TableauApiScope> }
 > = {
   'list-datasources': {
     mcp: ['tableau:mcp:datasource:read'],
     api: new Set(['tableau:content:read', 'tableau:mcp_site_settings:read']),
   },
+  'list-extract-refresh-tasks': {
+    mcp: ['tableau:mcp:tasks:read'],
+    api: new Set(['tableau:tasks:read', 'tableau:users:read']),
+  },
   'list-workbooks': {
     mcp: ['tableau:mcp:workbook:read'],
+    api: new Set(['tableau:content:read', 'tableau:mcp_site_settings:read']),
+  },
+  'list-projects': {
+    mcp: ['tableau:mcp:content:read'],
     api: new Set(['tableau:content:read', 'tableau:mcp_site_settings:read']),
   },
   'list-views': {
@@ -165,23 +177,52 @@ const toolScopeMap: Record<
   },
 };
 
-const supportedMcpScopes = Array.from(
-  new Set(Object.values(toolScopeMap).flatMap((tool) => tool.mcp)),
-);
-const supportedApiScopes = Array.from(
-  new Set(Object.values(toolScopeMap).flatMap((tool) => Array.from(tool.api))),
-);
+function getEnabledToolNames(): Set<WebToolName> {
+  const config = getConfig();
+  const enabledTools = new Set<WebToolName>(Object.keys(toolScopeMap) as WebToolName[]);
+
+  // Remove disabled tools based on feature flags
+  if (!config.adminToolsEnabled) {
+    enabledTools.delete('list-extract-refresh-tasks');
+  }
+
+  return enabledTools;
+}
 
 export function getSupportedMcpScopes(): McpScope[] {
-  return supportedMcpScopes;
+  const enabledTools = getEnabledToolNames();
+  const scopes = new Set<McpScope>();
+
+  for (const [toolName, scopeConfig] of Object.entries(toolScopeMap)) {
+    if (enabledTools.has(toolName as WebToolName)) {
+      for (const scope of scopeConfig.mcp) {
+        scopes.add(scope);
+      }
+    }
+  }
+
+  return Array.from(scopes);
 }
 
 export function getSupportedApiScopes(): TableauApiScope[] {
-  return supportedApiScopes;
+  const enabledTools = getEnabledToolNames();
+  const scopes = new Set<TableauApiScope>();
+
+  for (const [toolName, scopeConfig] of Object.entries(toolScopeMap)) {
+    if (enabledTools.has(toolName as WebToolName)) {
+      for (const scope of scopeConfig.api) {
+        scopes.add(scope);
+      }
+    }
+  }
+
+  return Array.from(scopes);
 }
 
 export function getSupportedScopes({ includeApiScopes }: { includeApiScopes: boolean }): string[] {
-  return includeApiScopes ? [...supportedMcpScopes, ...supportedApiScopes] : supportedMcpScopes;
+  const mcpScopes = getSupportedMcpScopes();
+  const apiScopes = getSupportedApiScopes();
+  return includeApiScopes ? [...mcpScopes, ...apiScopes] : mcpScopes;
 }
 
 /**
@@ -236,7 +277,7 @@ export function validateScopes(
  * @param endpoint - The MCP endpoint or tool name
  * @returns Array of required scopes for the endpoint
  */
-export function getRequiredScopesForTool(toolName: ToolName): ReadonlyArray<McpScope> {
+export function getRequiredScopesForTool(toolName: WebToolName): ReadonlyArray<McpScope> {
   const oauthConfig = getConfig().oauth;
   if (!oauthConfig || !oauthConfig.enforceScopes) {
     return [];
@@ -245,7 +286,7 @@ export function getRequiredScopesForTool(toolName: ToolName): ReadonlyArray<McpS
   return toolScopeMap[toolName].mcp;
 }
 
-export function getRequiredApiScopesForTool(toolName: ToolName): ReadonlyArray<TableauApiScope> {
+export function getRequiredApiScopesForTool(toolName: WebToolName): ReadonlyArray<TableauApiScope> {
   return Array.from(toolScopeMap[toolName].api);
 }
 

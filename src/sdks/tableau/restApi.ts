@@ -1,7 +1,6 @@
 import { fromError } from 'zod-validation-error/v3';
 
 import { getSiteLuidFromAccessToken } from '../../utils/getSiteLuidFromAccessToken.js';
-import { AuthConfig } from './authConfig.js';
 import {
   AxiosInterceptor,
   ErrorInterceptor,
@@ -9,7 +8,8 @@ import {
   getResponseInterceptorConfig,
   RequestInterceptor,
   ResponseInterceptor,
-} from './interceptors.js';
+} from '../interceptors.js';
+import { AuthConfig } from './authConfig.js';
 import {
   AuthenticatedAuthenticationMethods,
   AuthenticationMethods,
@@ -18,8 +18,11 @@ import ContentExplorationMethods from './methods/contentExplorationMethods.js';
 import DatasourcesMethods from './methods/datasourcesMethods.js';
 import McpSettingsMethods from './methods/mcpSettingsMethods.js';
 import MetadataMethods from './methods/metadataMethods.js';
+import ProjectsMethods from './methods/projectsMethods.js';
 import PulseMethods from './methods/pulseMethods.js';
 import { AuthenticatedServerMethods, ServerMethods } from './methods/serverMethods.js';
+import TasksMethods from './methods/tasksMethods.js';
+import UsersMethods from './methods/usersMethods.js';
 import ViewsMethods from './methods/viewsMethods.js';
 import VizqlDataServiceMethods from './methods/vizqlDataServiceMethods.js';
 import WorkbooksMethods from './methods/workbooksMethods.js';
@@ -178,6 +181,15 @@ export class RestApi {
     return metadataMethods;
   }
 
+  get projectsMethods(): ProjectsMethods {
+    const projectsMethods = new ProjectsMethods(RestApi.baseUrl, this.creds, {
+      timeout: this._maxRequestTimeoutMs,
+      signal: this._signal,
+    });
+    this._addInterceptors(RestApi.baseUrl, projectsMethods.interceptors);
+    return projectsMethods;
+  }
+
   get pulseMethods(): PulseMethods {
     const pulseMethods = new PulseMethods(RestApi.baseUrlWithoutVersion, this.creds, {
       timeout: this._maxRequestTimeoutMs,
@@ -203,6 +215,24 @@ export class RestApi {
     });
     this._addInterceptors(RestApi.baseUrl, mcpSettingsMethods.interceptors);
     return mcpSettingsMethods;
+  }
+
+  get tasksMethods(): TasksMethods {
+    const tasksMethods = new TasksMethods(RestApi.baseUrl, this.creds, {
+      timeout: this._maxRequestTimeoutMs,
+      signal: this._signal,
+    });
+    this._addInterceptors(RestApi.baseUrl, tasksMethods.interceptors);
+    return tasksMethods;
+  }
+
+  get usersMethods(): UsersMethods {
+    const usersMethods = new UsersMethods(RestApi.baseUrl, this.creds, {
+      timeout: this._maxRequestTimeoutMs,
+      signal: this._signal,
+    });
+    this._addInterceptors(RestApi.baseUrl, usersMethods.interceptors);
+    return usersMethods;
   }
 
   get vizqlDataServiceMethods(): VizqlDataServiceMethods {
